@@ -1,0 +1,206 @@
+---
+title: "NYPD Shooting Incident Analysis"
+author: "Bin.Lin"
+date: "2023-07-08"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Investigating the NYPD Shooting Incident Data
+
+This dataset comprises a comprehensive record of every shooting event in New York City, stretching back to 2006 and up until the end of the last calendar year. On a quarterly basis, this information is painstakingly collated and scrutinized by the Office of Management Analysis and Planning before being made public on the NYPD website.
+
+Each entry in the dataset corresponds to a specific shooting incident in NYC, providing details about the event itself, the geographical and temporal specifics of its occurrence. Additionally, the dataset offers data regarding the demographics of both suspects and victims. The purpose of this dataset is to offer the public an opportunity to delve into the nature of shooting and criminal activity in the city.
+
+
+### Importing Data
+
+```{r}
+# url<-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.json?accessType=DOWNLOAD"
+# data <- jsonlite::fromJSON(url)
+url<-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+data<-read.csv(url)
+```
+```{r}
+summary(data)
+```
+```{r}
+tail(data)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+### Tyding and Transforming Dataset
+Convert the 'OCCUR_DATE' column from its current format to a proper Date object.
+This makes subsequent date-based operations more accurate and efficient.
+Display a summary of the dataset to get general statistics for each column.
+Additionally, view the last six rows of the data for inspection.
+
+
+```{r}
+data$OCCUR_DATE <- as.Date(data$OCCUR_DATE, format="%m/%d/%Y")
+# max_year <- max(format(data$OCCUR_DATE, "%Y"))
+# max_year
+```
+```{r}
+summary(data)
+tail(data)
+```
+```{r}
+for(i in colnames(data)){
+  cnt_null <- sum(is.na(data[[i]]))
+  Per_null<-cnt_null/nrow(data)*100
+  cat("Column:", i, "- Null Count:", cnt_null, "- Null %:", round(Per_null, 3), "%\n")
+}
+```
+It enables a quick way to get an overview of the missing data in each column.
+The number of null values are not significant, and most are in the columns that wont be used in the next analysis phase.
+
+### Visualizing, Analyzing, and Modeling Data
+
+#### 1. Crime Cases by Borough
+
+```{r}
+boro_summary <- table(data$BORO)
+# print(boro_summary)
+bar <- barplot(boro_summary, main = "Cases by Borough", xlab = "Borough", ylab = "Number of Cases", col = "skyblue",ylim = c(0, 12000))
+text(x = bar, y = boro_summary, labels = boro_summary, pos = 3, cex = 0.8, col = "blue")
+
+```
+Borough with Highest Cases: Brooklyn has the highest number of cases followed by Bronx.
+
+#### 2. Monthly Cases and Trend
+```{r}
+data$YearMonth <- format(data$OCCUR_DATE, "%Y-%m")
+monthly_cases <- table(data$YearMonth)
+monthly_cases_df <- as.data.frame(table(data$YearMonth))
+names(monthly_cases_df) <- c("YearMonth", "Count")
+monthly_cases_df$YearMonth <- as.Date(paste(monthly_cases_df$YearMonth,"-01", sep=""), "%Y-%m-%d")
+monthly_cases_df <- monthly_cases_df[order(monthly_cases_df$YearMonth), ]
+plot(Count ~ YearMonth, data = monthly_cases_df, type = "l", main = "Monthly Cases", xlab = "Month", ylab = "Number of Cases")
+model <- lm(Count ~ YearMonth, data = monthly_cases_df)
+abline(model, col = "red")
+```
+Monthly cases chart shows the trend of crimes. It shows a decline trend until 2020. The cases number spikes when Covid pandemic started
+
+
+```{r}
+summary(data)
+```
+
+#### 3.Crimes by Race
+
+```{r}
+
+# Summarize cases by race
+race_summary <- table(data$VIC_RACE)
+
+race_summary_sorted <- sort(race_summary, decreasing = TRUE)
+max_y <- max(race_summary_sorted) + 5000
+y_limit <- max(race_summary_sorted) * 1.10
+barplot(race_summary_sorted, main = "Crimes by Race", xlab = "Race", ylab = "Number of Cases", 
+        col = "skyblue", las=0, ylim = c(0, max_y), cex.axis=0.5,cex.names = 0.5)
+text(x = 1:length(race_summary_sorted), y = race_summary_sorted +(0.02 * y_limit), 
+     labels = race_summary_sorted, pos = 3, cex = 0.9)
+
+```
+#### 4.Crime Cases by Hour
+```{r}
+# Extract hour from OCCUR_TIME and convert to numeric
+data$hour <- as.numeric(substr(data$OCCUR_TIME, 1, 2))
+hour_summary <- table(data$hour)
+
+# Since the hours are already in numeric format, they should be sorted numerically
+# However, to ensure correct order, we can explicitly sort them:
+hour_summary_sorted <- hour_summary[order(as.numeric(names(hour_summary)))]
+
+barplot(hour_summary_sorted, main = "Cases by Hour", xlab = "Hour of the Day", ylab = "Number of Cases", 
+        col = "brown", las=2)
+
+```
+It clearly shows the peak times when crimes are most frequently reported and the quiet times when there are fewer crimes.
+```{r}
+# install.packages("ggmap")
+# install.packages("ggplot2")
+# install.packages("treemap")
+library(ggmap)
+library(ggplot2)
+```
+
+#### 5.Crimes on Map to show which area in NYC has the highest crime density
+```{r}
+
+nyc_map <- ggmap::get_stamenmap(bbox = c(left = -74.3, bottom = 40.5, right = -73.7, top = 40.9), 
+                                zoom = 11, maptype = "toner-lite")
+
+ggmap(nyc_map) +
+  geom_point(data = data, aes(x = Longitude, y = Latitude), color="darkred", alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Cases based on Longitude and Latitude")
+
+
+
+```
+#### 6.Crime by Age Group
+```{r}
+# Summarize cases by victim age group
+age_group_summary <- table(data$VIC_AGE_GROUP)
+
+# Remove any NA or empty age groups if present
+age_group_summary <- age_group_summary[names(age_group_summary) != ""]
+age_group_summary <- age_group_summary[!is.na(names(age_group_summary))]
+
+age_group_summary
+
+```
+The age group 25-44 has the highest number of crime cases. This could mean several things: perhaps this demographic is more exposed to certain types of environments or situations where these crimes are prevalent, or maybe certain crimes specifically target this age group more than others.
+
+The elderly (65+) have the fewest crime cases, suggesting they might be at a lower risk for the types of crimes recorded in this dataset.
+```{r}
+#Pie Chart
+age_group_summary <- as.data.frame(table(data$VIC_AGE_GROUP))
+ggplot(age_group_summary, aes(x = "", y = Freq, fill = Var1)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y", start = 0) +
+  labs(title = "Case Count by Age Group", fill = "Age Group") +
+  theme_minimal()
+
+```
+```{r}
+
+library(treemap)
+
+```
+#### 7. Crime by Location
+
+```{r}
+location_summary <- data[!is.na(data$LOCATION_DESC) & data$LOCATION_DESC != "(null)" & data$LOCATION_DESC != "", ]
+location_summary <- as.data.frame(table(location_summary$LOCATION_DESC))
+location_summary <- location_summary[order(-location_summary$Freq),]
+treemap(location_summary,
+        index = "Var1",
+        vSize = "Freq",
+        title = "Cases by Location")
+
+```
+Residential areas, including public housing, private apartments, and private houses, seem to be the most common locations for crime based on this dataset. This could suggest that people might be at a higher risk within their living areas, pointing to a need for enhanced community policing or security measures in these zones.
+
+Commercial and entertainment venues, like grocery stores, bars, and commercial buildings, also see a substantial number of incidents. Owners and patrons should be aware of potential risks and may consider enhancing security or surveillance.
+
+```{r}
+print(location_summary)
+```
+### BIAS IDENTIFICATION
+
+The data reveals that a significant number of crimes are attributed to the 'BLACK' racial category. However, it would be unwise to jump to conclusions without first considering the socioeconomic factors, historical context, and other variables that may contribute to this statistic. We must approach the data with nuance.
+
+One may assume severe crimes predominantly occur under the cloak of darkness. Yet the data indicates criminal incidents persist throughout the day, challenging the stereotype of "nighttime" being prime time for crime.
+
+While commercial and public areas may seem logical crime hotspots due to high foot traffic, the data highlights residential areas as primary locations. This reminds us that crime permeates intimate spaces, not just public ones.
+
+It's tempting to associate younger age groups with crime, owing to impulsiveness and peer pressure. However, the data shows a significant number of cases in the 25-44 age bracket, defying the notion that the youth are always the culprits.
+
+Given their association with late nights and rowdiness, one may expect bars and nightclubs to top the location list. However, they in fact rank below residential areas, suggesting we rethink our ideas of so-called "risky" places.
+
+In a nutshell, interpreting crime statistics requires moving past assumptions and biases to develop a thoughtful, nuanced perspective. A probing analysis provides greater insight into this multi-layered issue.
